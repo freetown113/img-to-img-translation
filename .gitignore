@@ -1,0 +1,7 @@
+*.pyc
+*.pth
+*/**/__pycache__
+
+.vscode
+weights
+saved_images

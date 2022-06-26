@@ -1,0 +1,18 @@
+version: "3.3"
+services:
+  vdtest:
+    image: vd_test:v1
+    container_name: vd_test_container
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    volumes:
+        - /home:/home/my_dir
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    ports:
+      - "7671:22"
+    command: >
+      /bin/bash
