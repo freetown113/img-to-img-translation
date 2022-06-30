@@ -1,23 +1,25 @@
 general: &reference
   seed: 111
-  project_location: "/img-to-img-translation"
-  dataset_location: "/img-to-img-translation/VD_data"
-  result_img_path: "saved_images"
-  save_weights_path: "weights"
+  project_location: "/img-to-img-alternative"
+  dataset_location: "/img-to-img-alternative/VD_data"
+  result_img_path: "saved_images_2"
+  save_weights_path: "weights_2"
   continue_from_pretrained: False  #  Make this flag True if you wand load pretrained model
-  download_data: True  #  Make this flag True or False wether you want or not download data
-  epoches: 500
+  download_data: False  #  Make this flag True or False wether you want or not download data
+  epoches: 1000
   lerning_rate: 0.0002
   device: "0"
   img_size: 256
   resize_img: 256
-  test_while_training: False #  Make it True if you want validate model performance on the test dataset during training
-  batch_size: 16
+  test_while_training: True #  Make it True if you want validate model performance on the test dataset during training
+  batch_size: 8
   enc_dec_channels: 256
   encode_ratio: 16
   latent_dim: 512
   optim: "Adam"
   enc_channels: 64
+  nf: 64
+  save_images: True
   betas: 
     - 0 
     - 0.9
@@ -41,8 +43,8 @@ parameters:
     "type": "Generator"
     "params": [<<: *reference]
   -
-    "type": "Discriminator"
-    "params": []
+    "type": "MultiscaleDiscriminator"
+    "params": [<<: *reference]
   -
     "type": "VGG"
     "params": []

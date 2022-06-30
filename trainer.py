@@ -20,6 +20,9 @@ class VDTrainer:
         self.latent = arguments.latent_dim
         self.device = torch.device('cuda:' + arguments.device if torch.cuda.is_available() else 'cpu')
         self.data_loaders = data_loaders
+        self.lr = arguments.lerning_rate
+        self.betas = arguments.betas
+        self.save_images = arguments.save_images
         self.visual = visualisation
         self.block_loader = BlocksLoader(arguments, self.device)
         self.min_gen_loss = math.inf
@@ -29,9 +32,11 @@ class VDTrainer:
         #  Define neural networks models
         networks = self.block_loader.get_all_networks()
 
+        #  Load weights if requested
         if self.args.continue_from_pretrained:
             load_params(self.args, networks)
 
+        #  Split neural network model into blocks
         generator = networks['generator']
         discriminator = networks['discriminator']
         encoder = networks['encoder']
@@ -40,55 +45,72 @@ class VDTrainer:
 
         #  Define opimizers with parameters from corresponding models
         optimizer_generator = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()) +
-                                               list(generator.parameters()), lr=0.0004, betas=(0, 0.9))
-        optimizer_discriminator = torch.optim.Adam(discriminator.parameters(), lr=0.0001, betas=(0, 0.9))
+                                               list(generator.parameters()), lr=self.lr * 2, betas=self.betas)
+        optimizer_discriminator = torch.optim.Adam(discriminator.parameters(), lr=self.lr / 2, betas=self.betas)
 
         #  Define losses
-        discrim_loss = DiscriminatorLoss()
+        d_loss = DiscriminatorLoss(self.device)
         loss_vgg = VGGLoss(vgg)
         L1_loss = nn.L1Loss()
 
+        # Describe training loop
         for epoch in range(self.args.epoches):
             for n, (real_samples, target_samples) in enumerate(self.data_loaders['train']):
 
+                #  Copy batch of data to device
                 real_samples = real_samples.to(self.device)
                 target_samples = target_samples.to(self.device)
-                real_samples_labels = torch.ones((self.bs, 1)).to(self.device)
+
+                # Training the discriminator
+                optimizer_discriminator.zero_grad()
                 latent_space_samples = torch.randn((self.bs, self.latent)).to(self.device)
                 with torch.no_grad():
                     vec = generator.style(real_samples, target_samples, latent_space_samples)
                     generated_samples = decoder(vec)
 
-                pred_real = discriminator(real_samples)
-                pred_fake = discriminator(generated_samples)
-                loss_real = discrim_loss(pred_real, self.device)
-                loss_fake = discrim_loss(pred_fake, self.device)
+                fake_and_real = torch.cat([generated_samples, target_samples], dim=0)
+                discriminator_out = discriminator(fake_and_real)
+                pred_fake, pred_real = d_loss.divide_pred(discriminator_out)
+
+                loss_real = d_loss.discrim_loss(pred_real, True)
+                loss_fake = d_loss.discrim_loss(pred_fake, True)
                 loss_discriminator = loss_real + loss_fake
 
-                # Training the discriminator
-                optimizer_discriminator.zero_grad()
                 loss_discriminator.backward()
                 optimizer_discriminator.step()
 
                 # Training the generator
                 optimizer_generator.zero_grad()
-                latent, z_mean, z_log_var = encoder(real_samples)
+                latent, _, _ = encoder(real_samples)
                 style = generator.style(real_samples, target_samples, latent)
                 fake_img = decoder(style)
 
-                with torch.no_grad():
-                    output_discriminator_generated = discriminator(fake_img)
+                fake_and_real = torch.cat([fake_img, target_samples], dim=0)
 
-                kld_loss = torch.mean(-0.5 * torch.sum(1 + z_log_var - z_mean ** 2 - z_log_var.exp(), dim=1), dim=0)
-                descriminator_loss = -torch.mean(fake_img)
-                loss_generator = L1_loss(output_discriminator_generated, real_samples_labels)
+                with torch.no_grad():
+                    discriminator_out = discriminator(fake_and_real)
+
+                pred_fake, pred_real = d_loss.divide_pred(discriminator_out)
+
+                loss_fake = d_loss.discrim_loss(pred_fake, False)
+
+                num_D = len(pred_fake)
+                GAN_Feat_loss = torch.FloatTensor(1).fill_(0).to(self.device)
+                for i in range(num_D):
+                    num_intermediate_outputs = len(pred_fake[i]) - 1
+                    for j in range(num_intermediate_outputs):
+                        unweighted_loss = L1_loss(pred_fake[i][j], pred_real[i][j].detach())
+                        GAN_Feat_loss += unweighted_loss * 1.0 / num_D
+
                 vgg_loss = loss_vgg(fake_img, target_samples)
-                vae_loss = loss_generator + kld_loss + descriminator_loss + vgg_loss
+
+                vae_loss = loss_fake + vgg_loss + GAN_Feat_loss
 
                 vae_loss.backward()
                 optimizer_generator.step()
 
-                self.visual.save_data(real_samples, fake_img, target_samples)
+                if self.save_images:
+                    self.visual.save_data(real_samples, fake_img, target_samples)
 
                 if self.min_gen_loss > vae_loss.detach().cpu().item():
                     self.min_gen_loss = vae_loss.detach().cpu().item()
@@ -104,21 +126,51 @@ class VDTrainer:
                   f'descriminator_loss is {loss_discriminator.detach().cpu().item()}')
 
             if self.args.test_while_training:
-                for n, (real_samples, target_samples) in enumerate(self.data_loaders['test']):
-                    real_samples = real_samples.to(self.device)
-                    target_samples = target_samples.to(self.device)
+                if epoch % 10 == 0 and epoch > 0:
+                    for n, (real_samples, target_samples) in enumerate(self.data_loaders['test']):
+                        #  Copy batch of data to device
+                        real_samples = real_samples.to(self.device)
+                        target_samples = target_samples.to(self.device)
 
-                    latent, z_mean, z_log_var = encoder(real_samples)
-                    style = generator.style(real_samples, target_samples, latent)
-                    fake_img = decoder(style)
+                        # Testing the discriminator
+                        latent_space_samples = torch.randn((self.bs, self.latent)).to(self.device)
+                        with torch.no_grad():
+                            vec = generator.style(real_samples, target_samples, latent_space_samples)
+                            generated_samples = decoder(vec)
 
-                    with torch.no_grad():
-                        output_discriminator_generated = discriminator(fake_img)
+                        fake_and_real = torch.cat([generated_samples, target_samples], dim=0)
+                        discriminator_out = discriminator(fake_and_real)
+                        pred_fake, pred_real = d_loss.divide_pred(discriminator_out)
 
-                    kld_loss = torch.mean(-0.5 * torch.sum(1 + z_log_var - z_mean ** 2 - z_log_var.exp(), dim=1), dim=0)
-                    descriminator_loss = -torch.mean(fake_img)
-                    loss_generator = L1_loss(output_discriminator_generated, real_samples_labels)
-                    vgg_loss = loss_vgg(fake_img, target_samples)
-                    vae_loss = loss_generator + kld_loss + descriminator_loss + vgg_loss
+                        loss_real = d_loss.discrim_loss(pred_real, True)
+                        loss_fake = d_loss.discrim_loss(pred_fake, True)
+                        loss_discriminator = loss_real + loss_fake
 
-                print(f'Test loss in epoch {epoch} is {vae_loss.detach().cpu().item()}')
+                        # Testing the generator
+                        latent, _, _ = encoder(real_samples)
+                        style = generator.style(real_samples, target_samples, latent)
+                        fake_img = decoder(style)
+
+                        fake_and_real = torch.cat([fake_img, target_samples], dim=0)
+
+                        with torch.no_grad():
+                            discriminator_out = discriminator(fake_and_real)
+
+                        pred_fake, pred_real = d_loss.divide_pred(discriminator_out)
+
+                        loss_fake = d_loss.discrim_loss(pred_fake, False)
+
+                        num_D = len(pred_fake)
+                        GAN_Feat_loss = torch.FloatTensor(1).fill_(0).to(self.device)
+                        for i in range(num_D):
+                            num_intermediate_outputs = len(pred_fake[i]) - 1
+                            for j in range(num_intermediate_outputs):
+                                unweighted_loss = L1_loss(pred_fake[i][j], pred_real[i][j].detach())
+                                GAN_Feat_loss += unweighted_loss * 1.0 / num_D
+
+                        vgg_loss = loss_vgg(fake_img, target_samples)
+
+                        vae_loss = loss_fake + vgg_loss + GAN_Feat_loss
+
+                    print(f'Test in epoch {epoch} generator loss is {vae_loss.detach().cpu().item()}, '
+                          f'descriminator_loss is {loss_discriminator.detach().cpu().item()}')

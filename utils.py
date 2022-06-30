@@ -19,8 +19,8 @@ def load_params(
     for name, model in models.items():
         try:
             model.load_state_dict(torch.load(os.path.join(arguments.project_location, 
-                                                         arguments.save_weights_path, name + '.pth')))
-        except:
+                                                          arguments.save_weights_path, name + '.pth')))
+        except Exception as ex:
             print(f'Weights for model {name} was not found! (If it\'s vgg don\'t pay attention to this warning)')
 
 

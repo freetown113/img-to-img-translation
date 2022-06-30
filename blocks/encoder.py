@@ -2,6 +2,7 @@ from ast import arg
 import math
 import torch
 import torch.nn as nn
+import torch.nn.utils.spectral_norm as spec_norm
 
 from blocks.base import BaseNetwork
 import factory
@@ -34,22 +35,22 @@ class Encoder(BaseNetwork):
                  int(math.ceil(self.im_size / self.enc_r)),
                  int(math.ceil(float(self.im_size) / self.enc_r)))
 
-        self.conv1 = nn.Conv2d(3, self.ch, kernel_size=3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(self.ch, self.ch * 2, kernel_size=3, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(self.ch * 2, self.ch * 2, kernel_size=3, stride=2, padding=1)
-        self.conv4 = nn.Conv2d(self.ch * 2, self.ch * 4, kernel_size=3, stride=2, padding=1)
+        self.conv1 = spec_norm(nn.Conv2d(3, self.ch, kernel_size=3, stride=2, padding=1))
+        self.conv2 = spec_norm(nn.Conv2d(self.ch, self.ch * 2, kernel_size=3, stride=2, padding=1))
+        self.conv3 = spec_norm(nn.Conv2d(self.ch * 2, self.ch * 2, kernel_size=3, stride=2, padding=1))
+        self.conv4 = spec_norm(nn.Conv2d(self.ch * 2, self.ch * 4, kernel_size=3, stride=2, padding=1))
         self.linear1 = nn.Linear(shape[1] * shape[2] * shape[3], self.ch * 16)
         self.linear2 = nn.Linear(self.ch * 16, self.l_dim)
         self.linear3 = nn.Linear(self.ch * 16, self.l_dim)
         self.sample = sampling
 
     def forward(self, image):
-        x = nn.functional.relu(self.conv1(image))
-        x = nn.functional.relu(self.conv2(x))
-        x = nn.functional.relu(self.conv3(x))
-        x = nn.functional.relu(self.conv4(x))
+        x = nn.functional.relu(self.conv1(image), inplace=True)
+        x = nn.functional.relu(self.conv2(x), inplace=True)
+        x = nn.functional.relu(self.conv3(x), inplace=True)
+        x = nn.functional.relu(self.conv4(x), inplace=True)
         x = x.reshape((self.bs, -1))
-        z = nn.functional.relu(self.linear1(x))
+        z = nn.functional.relu(self.linear1(x), inplace=True)
 
         z_mean = self.linear2(z)
         z_log_var = self.linear3(z)

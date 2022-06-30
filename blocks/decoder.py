@@ -1,5 +1,6 @@
 import math
 import torch.nn as nn
+import torch.nn.utils.spectral_norm as spec_norm
 
 from blocks.base import BaseNetwork
 import factory
@@ -25,23 +26,23 @@ class Decoder(BaseNetwork):
                     int(math.ceil(float(self.im_size) / self.enc_r)))
         out_shape = self.shape[1] * self.shape[2] * self.shape[3]
         self.linear = nn.Linear(self.l_dim, out_shape)
-        self.deconv1 = nn.ConvTranspose2d(self.shape[1], self.ch * 4, kernel_size=3,
-                                          stride=2, padding=1, output_padding=1)
-        self.deconv2 = nn.ConvTranspose2d(self.ch * 4, self.ch * 2, kernel_size=3,
-                                          stride=2, padding=1, output_padding=1)
-        self.deconv3 = nn.ConvTranspose2d(self.ch * 2, self.ch * 2, kernel_size=3,
-                                          stride=2, padding=1, output_padding=1)
-        self.deconv4 = nn.ConvTranspose2d(self.ch * 2, self.ch, kernel_size=3,
-                                          stride=2, padding=1, output_padding=1)
-        self.deconv5 = nn.ConvTranspose2d(self.ch, 3, kernel_size=3, padding=1)
+        self.deconv1 = spec_norm(nn.ConvTranspose2d(self.shape[1], self.ch * 4, kernel_size=3,
+                                                    stride=2, padding=1, output_padding=1))
+        self.deconv2 = spec_norm(nn.ConvTranspose2d(self.ch * 4, self.ch * 2, kernel_size=3,
+                                                    stride=2, padding=1, output_padding=1))
+        self.deconv3 = spec_norm(nn.ConvTranspose2d(self.ch * 2, self.ch * 2, kernel_size=3,
+                                                    stride=2, padding=1, output_padding=1))
+        self.deconv4 = spec_norm(nn.ConvTranspose2d(self.ch * 2, self.ch, kernel_size=3,
+                                                    stride=2, padding=1, output_padding=1))
+        self.deconv5 = spec_norm(nn.ConvTranspose2d(self.ch, 3, kernel_size=3, padding=1))
 
     def forward(self, input):
         x = self.linear(input)
         x = x.reshape((-1, self.shape[1], self.shape[2], self.shape[3]))
-        x = nn.functional.relu(self.deconv1(x))
-        x = nn.functional.relu(self.deconv2(x))
-        x = nn.functional.relu(self.deconv3(x))
-        x = nn.functional.relu(self.deconv4(x))
+        x = nn.functional.relu(self.deconv1(x), inplace=True)
+        x = nn.functional.relu(self.deconv2(x), inplace=True)
+        x = nn.functional.relu(self.deconv3(x), inplace=True)
+        x = nn.functional.relu(self.deconv4(x), inplace=True)
         return nn.functional.tanh(self.deconv5(x))
 
 
