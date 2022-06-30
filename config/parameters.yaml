@@ -1,9 +1,9 @@
 general: &reference
   seed: 111
-  project_location: "/img-to-img-alternative"
-  dataset_location: "/img-to-img-alternative/VD_data"
-  result_img_path: "saved_images_2"
-  save_weights_path: "weights_2"
+  project_location: "/img-to-img-translation"
+  dataset_location: "/img-to-img-translation/VD_data"
+  result_img_path: "saved_images"
+  save_weights_path: "weights"
   continue_from_pretrained: False  #  Make this flag True if you wand load pretrained model
   download_data: False  #  Make this flag True or False wether you want or not download data
   epoches: 1000
