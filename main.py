@@ -29,7 +29,7 @@ def main(config_location):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--config', type=str, default='/img-to-img-alternative/config/parameters.yaml',
+    parser.add_argument('--config', type=str, default='/img-to-img-translation/config/parameters.yaml',
                         help='Path to the json file with parameters')
 
     args = parser.parse_args()
